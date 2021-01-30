@@ -4,7 +4,11 @@
 #include "BinarySearch.hpp"
 #include "CBF-HT.h"
 #include <sys/time.h>
+#include <unistd.h>
+#include <sys/sysinfo.h>
 #include <fstream>
+#include <pthread.h>
+#include <sys/prctl.h>
 using namespace std;
 
 
@@ -16,6 +20,7 @@ struct timeval	startTime,endTime;
 struct timeval	st,et;
 
 int seed = time(0);
+int kernel_number = get_nprocs();
 
 HashBasedFIB HPT;
 //BinarySearch mFIB(MAX*10);
@@ -74,6 +79,42 @@ void generate_names(){
 
         out.close();
     }
+}
+
+static void * pthread_fun(void *arg){
+
+    /*
+    线程重命名
+    */
+    prctl(PR_SET_NAME, "pthread_fun");
+
+    char buf[MAX_BUF];
+
+#if 0
+    /*
+    回收线程资源
+    将非分离的线程设置为分离线程
+    即通知线程库, 在指定的线程终止时回收线程占用的内存等资源
+    */
+    pthread_detach(pthread_self());
+#endif
+
+    memset(buf, 0x0, sizeof(buf));
+    memcpy(buf, (char *)arg, strlen(arg));
+
+    /* 线程开始运行 */
+    printf("pthread start!\n");
+
+    printf("pthread id = %lu\n", pthread_self());
+
+    printf("pthread buf = %s\n", buf);
+
+    sleep(2);
+
+    /* 线程结束运行 */
+    printf("pthread end!\n");
+
+    pthread_exit((void *) 0);
 }
 
 //插入名字前缀
@@ -161,7 +202,7 @@ void generate_insert_names(){
 }
 
 void generate_insert_names_and_query(){
-    gettimeofday(&st,NULL);
+	    gettimeofday(&st,NULL);
     for (uint64 i = 0; i < MAX; i++){
         while(1){
             string name = gen.generate_shorter_prefix();
@@ -191,6 +232,26 @@ void generate_insert_names_and_query(){
 
 
     printf("insert names into FIB\n");
+
+	/*
+    创建线程
+    */
+    if ((pthread_create(&pid, NULL, pthread_fun, (void*)buf)) != 0){
+        /*执行错误时, 并不修改系统全局变量errno*/
+        printf("pthread_create err\n");
+        return -1;
+    }
+
+    /* 
+    等待线程结束 : 当前线程会处于阻塞状态, 直到被调用的线程结束后, 当前线程才会继续执行
+    回收线程资源 : 如果被调用的线程是非分离的, 并且没有对该线程使用pthread_join()的话, 该线程结束后并不会释放其内存空间
+    */
+    if (pthread_join(pid, &ret) != 0){
+        printf("pthread_join err\n");
+        return -1;
+    }
+
+    printf("pthread ret = %ld\n", (long)ret);
 
     //gettimeofday(&st,NULL);
     for (int i = 0; i < N; i++) {
@@ -255,6 +316,7 @@ int main()
     //insert_prefixes();
     //generate_insert_names();
     generate_insert_names_and_query();
+
     return 0;
 
 }
